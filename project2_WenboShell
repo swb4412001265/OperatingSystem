@@ -1,0 +1,210 @@
+#include <sys/wait.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <regex.h>
+
+
+#define BUFSIZE 64
+#define DELIM " \t\r\n\a"
+
+static int sequence = 1;
+
+typedef struct cmdHist{
+	int sequence;
+	char *cmd;
+	struct cmdHist *next;
+}cmdHist;
+
+
+char *builtinStr[] = {
+	"cd",
+	"help",
+	"exit",
+	"pwd",
+	"history"
+};
+
+int sizeofBuildinStr() {
+	return sizeof(builtinStr)/sizeof(char *);
+}
+
+int p2cd(char **args) {
+  	if (args[1] == NULL) {
+    	fprintf(stderr, "Practice2_shell: expected argument to \"cd\"\n");
+  	} else {
+    	if (chdir(args[1]) != 0) {
+			perror("Practice2_shell");
+    	}
+  	}
+    return 0;
+}
+
+int p2help(char **args) {
+	int i;
+  	printf("Wenbo Su's Practice2 Shell\n");
+  	printf("Type program names and arguments, and hit enter.\n");
+  	printf("The following are builtin commands:\n");
+
+  	for (i = 0; i < sizeofBuildinStr(); i++) {
+    	printf("  %s\n", builtinStr[i]);
+  	}
+
+  	printf("Use the man command for information on other programs.\n");
+  	return 0;
+}
+
+int p2exit(char **args) {
+	printf("Practice2_shell exited\n");
+	exit(EXIT_SUCCESS) ;
+}
+
+void p2pwd(char **args) {
+	printf("current working directory:%s\n", getcwd(NULL, 0));
+}
+
+void p2history(cmdHist *head) {
+
+	while(head->next != NULL) {
+		printf("%d : %s\n", head->next->sequence, head->next->cmd);
+		head = head->next;
+	}
+}
+
+void printPrompt() {
+	printf("WS> ");
+}
+
+char *readCommandLine() {
+	char *line = NULL;
+	size_t bufsize = 0;
+	getline(&line, &bufsize, stdin);
+	return line;
+}
+
+
+char **parseCommand(char *line) {
+	int bufsize = BUFSIZE, position = 0;
+  	char **tokens = malloc(bufsize * sizeof(char*));
+  	char *token;
+
+  	if (!tokens) {
+    	fprintf(stderr, "Practice2_shell: allocation error\n");
+    	exit(EXIT_FAILURE);
+  	}
+
+  	token = strtok(line, DELIM);
+  	while (token != NULL) {
+    	tokens[position] = token;
+    	position++;
+
+    	if (position >= bufsize) {
+      		bufsize += BUFSIZE;
+      		tokens = realloc(tokens, bufsize * sizeof(char*));
+      		if (!tokens) {
+        		fprintf(stderr, "Practice2_shell: allocation error\n");
+        		exit(EXIT_FAILURE);
+      		}
+    	}
+
+    	token = strtok(NULL, DELIM);
+  	}
+  	tokens[position] = NULL;
+  	return tokens;
+}
+
+int isBuiltInCommand(char **cmd) {
+	int i;
+	for (i = 0; i < sizeofBuildinStr(); ++i) {
+		if(strcmp(cmd[0], builtinStr[i]) == 0) {
+			return 1;
+		} 
+	}
+	return 0;
+}
+
+void executeBuiltInCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
+	cmdHist *node = (cmdHist *)malloc(sizeof(cmdHist));
+	node->cmd = (char *)malloc(strlen(*cmd) + 1);
+ 	strcpy(node->cmd, *cmd);
+	node->sequence = sequence;
+	sequence++;
+	node->next = NULL;
+	(*tmpCmd)->next = node;
+	*tmpCmd = (*tmpCmd)->next;
+	if (strcmp(cmd[0], builtinStr[0]) == 0) {
+		p2cd(cmd);
+	}else if (strcmp(cmd[0], builtinStr[1]) == 0) {
+		p2help(cmd);
+	}else if (strcmp(cmd[0], builtinStr[2]) == 0) {
+		p2exit(cmd);
+	}else if (strcmp(cmd[0], builtinStr[3]) == 0) {
+		p2pwd(cmd);
+	}else if(strcmp(cmd[0], builtinStr[4]) == 0) {
+		p2history(head);
+	}else {
+		return;
+	}
+}
+
+void executeCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
+	regex_t regex;
+	regmatch_t pmatch[1];
+	const size_t nmatch = 1;
+	int i;
+	char *tmpString = (char *)malloc(sizeof(cmd[0]));
+	regcomp(&regex, "^!([0-9]+)", REG_EXTENDED|REG_NEWLINE);
+	if (strcmp(*cmd, "!!") == 0) { 
+		printf("%s\n", (*tmpCmd)->cmd);
+	}
+	else if(regexec(&regex, cmd[0], nmatch, pmatch, 0) == 0){
+    int j = 0;
+    for (i = pmatch[0].rm_so + 1; i < pmatch[0].rm_eo; ++i) {
+      tmpString[j] = cmd[0][i];
+      j++;
+		}
+		while(head->next != NULL) {
+		  if(head->next->sequence == atoi(tmpString)) {
+		    printf("%s\n",head->next->cmd);
+		    break;
+		  }
+		  head = head->next;
+		}
+		if(head->next == NULL) {
+		  printf("There is no such history command!\n");
+		}
+	}
+	else{
+		if (execvp(cmd[0], cmd) == -1) {
+			perror("Practice2_Shell");
+    	}
+	}
+	regfree(&regex);
+  return;
+}
+
+int main (int argc, char **argv) { 
+	pid_t childPid;
+	int status;
+	cmdHist *head = malloc(sizeof(cmdHist));
+	cmdHist *tmpCmd = head;
+	while (1) { 
+		printPrompt(); 
+		char *cmdLine = readCommandLine(); 
+		char **cmd = parseCommand(cmdLine); 
+		if (isBuiltInCommand(cmd)) { 
+			executeBuiltInCommand(cmd, &tmpCmd, head); 
+		} else { 
+			childPid = fork();
+			if (childPid == 0) { 
+				executeCommand(cmd, &tmpCmd, head); //calls execvp
+			} else { 
+				waitpid (childPid, &status, WUNTRACED); 
+			} 
+		} 
+	}
+	free(head);
+	free(tmpCmd);
+	return 0; 
+}
