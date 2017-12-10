@@ -57,7 +57,7 @@ int p2help(char **args) {
 
 int p2exit(char **args) {
 	printf("Practice2_shell exited\n");
-	exit(EXIT_SUCCESS) ;
+	exit(EXIT_SUCCESS);
 }
 
 void p2pwd(char **args) {
@@ -79,7 +79,7 @@ void printPrompt() {
 char *readCommandLine() {
 	char *line = NULL;
 	size_t bufsize = 0;
-	getline(&line, &bufsize, stdin);
+  getline(&line, &bufsize, stdin);
 	return line;
 }
 
@@ -124,6 +124,22 @@ int isBuiltInCommand(char **cmd) {
 	return 0;
 }
 
+void checkBuildInCommand(char *checkcmd, char *builtinStr[], char **cmd, cmdHist *head) {
+  if (strcmp(checkcmd, builtinStr[0]) == 0) {
+		p2cd(cmd);
+	}else if (strcmp(checkcmd, builtinStr[1]) == 0) {
+		p2help(cmd);
+	}else if (strcmp(checkcmd, builtinStr[2]) == 0) {
+		p2exit(cmd);
+	}else if (strcmp(checkcmd, builtinStr[3]) == 0) {
+		p2pwd(cmd);
+	}else if(strcmp(checkcmd, builtinStr[4]) == 0) {
+		p2history(head);
+	}else {
+	  return;
+	}
+}
+
 void executeBuiltInCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
 	cmdHist *node = (cmdHist *)malloc(sizeof(cmdHist));
 	node->cmd = (char *)malloc(strlen(*cmd) + 1);
@@ -133,20 +149,9 @@ void executeBuiltInCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
 	node->next = NULL;
 	(*tmpCmd)->next = node;
 	*tmpCmd = (*tmpCmd)->next;
-	if (strcmp(cmd[0], builtinStr[0]) == 0) {
-		p2cd(cmd);
-	}else if (strcmp(cmd[0], builtinStr[1]) == 0) {
-		p2help(cmd);
-	}else if (strcmp(cmd[0], builtinStr[2]) == 0) {
-		p2exit(cmd);
-	}else if (strcmp(cmd[0], builtinStr[3]) == 0) {
-		p2pwd(cmd);
-	}else if(strcmp(cmd[0], builtinStr[4]) == 0) {
-		p2history(head);
-	}else {
-		return;
-	}
+	checkBuildInCommand(cmd[0], builtinStr, cmd, head);
 }
+
 
 void executeCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
 	regex_t regex;
@@ -156,22 +161,26 @@ void executeCommand(char **cmd, cmdHist **tmpCmd, cmdHist *head) {
 	char *tmpString = (char *)malloc(sizeof(cmd[0]));
 	regcomp(&regex, "^!([0-9]+)", REG_EXTENDED|REG_NEWLINE);
 	if (strcmp(*cmd, "!!") == 0) { 
-		printf("%s\n", (*tmpCmd)->cmd);
-	}
-	else if(regexec(&regex, cmd[0], nmatch, pmatch, 0) == 0){
+		if((*tmpCmd)->cmd == NULL) {
+		  printf("There is no such history command!\n");
+		}else {
+		checkBuildInCommand((*tmpCmd)->cmd, builtinStr, cmd, head);
+		}
+	}else if(regexec(&regex, cmd[0], nmatch, pmatch, 0) == 0){
     int j = 0;
     for (i = pmatch[0].rm_so + 1; i < pmatch[0].rm_eo; ++i) {
-      tmpString[j] = cmd[0][i];
-      j++;
+    		tmpString[j] = cmd[0][i];
+    		j++;
 		}
-		while(head->next != NULL) {
-		  if(head->next->sequence == atoi(tmpString)) {
-		    printf("%s\n",head->next->cmd);
+		cmdHist *tmp = head;
+		while(tmp->next != NULL) {
+		  if(tmp->next->sequence == atoi(tmpString)) {
+		    checkBuildInCommand(tmp->next->cmd, builtinStr, cmd, head);
 		    break;
 		  }
-		  head = head->next;
+		  tmp = tmp->next;
 		}
-		if(head->next == NULL) {
+		if(tmp->next == NULL) {
 		  printf("There is no such history command!\n");
 		}
 	}
@@ -191,7 +200,7 @@ int main (int argc, char **argv) {
 	cmdHist *tmpCmd = head;
 	while (1) { 
 		printPrompt(); 
-		char *cmdLine = readCommandLine(); 
+		char *cmdLine = readCommandLine();
 		char **cmd = parseCommand(cmdLine); 
 		if (isBuiltInCommand(cmd)) { 
 			executeBuiltInCommand(cmd, &tmpCmd, head); 
